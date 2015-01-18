@@ -9,6 +9,7 @@ except:
 module_config = {
 	"name": "lua-promise",
 	"module": {
+		"dir": "dmc_lua",
 		"files": [
 			"lua_promise.lua"
 		],
@@ -17,10 +18,9 @@ module_config = {
 		]
 	},
 	"tests": {
-		"files": [
-		],
-		"requires": [
-		]
+		"dir": "spec",
+		"files": [],
+		"requires": []
 	}
 }
 
