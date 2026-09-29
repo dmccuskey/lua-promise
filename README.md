@@ -14,8 +14,9 @@ d:callback( 'done' )  --> done
 
 - `Deferred`: the producer's side; resolves or rejects its promise
 - `Promise`: `done()` and `fail()` callbacks, any number of each; a callback added after the promise settled runs at once
-- Resolve and reject with any number of values; the callbacks get them all
-- `maybeDeferred( func, ... )`: call a function and get a `Deferred` whatever it returns
+- A promise settles once: later `resolve()` and `reject()` calls are ignored
+- Resolve and reject with any number of values, `nil` included; the callbacks get them all
+- `maybeDeferred( func, ... )`: call a function and get a `Deferred` whatever it returns, rejected if the function raises an error
 - Pure Lua 5.1, built on [lua-class](https://github.com/dmccuskey/lua-class); MIT licensed
 
 It isn't Promises/A+: callbacks don't chain, and their return values and errors aren't passed on. See [Known Issues](#known-issues).
@@ -94,8 +95,8 @@ To update, pull the repository again (`git -C lua-promise pull`).
 |---|---|
 | `Promise` | The promise class. |
 | `Deferred` | The deferred class. |
-| `maybeDeferred( func, args, kwargs )` | Calls `func( args, kwargs )`. Returns the result if it's a `Deferred`, otherwise a new `Deferred` already resolved with the result. |
-| `__version` | `'0.1.1'`. |
+| `maybeDeferred( func, ... )` | Calls `func( ... )` in `pcall()`. Returns the result if it's a `Deferred`, otherwise a new `Deferred` already resolved with the result (its first return value). If `func` raises, returns a new `Deferred` already rejected with the error: the message string (with its file and line) or the value raised. |
+| `__version` | `'0.2.0'`. |
 
 Both classes are lua-class classes: create with `:new()`, remove with `:destroy()`.
 
@@ -115,13 +116,13 @@ Both classes are lua-class classes: create with `:new()`, remove with `:destroy(
 | member | does |
 |---|---|
 | `p.state` | `'pending'`, `'resolved'` or `'rejected'` (read-only property; the values are also `Promise.STATE_PENDING`, `STATE_RESOLVED`, `STATE_REJECTED`). |
-| `p:resolve( ... )` | Sets the state to resolved and calls every `done` callback with the values, in the order they were added. |
-| `p:reject( ... )` | Sets the state to rejected and calls every `fail` callback with the values. |
-| `p:done( callback )` | If resolved, calls `callback` now with the values; otherwise keeps it for `resolve()`. Returns nothing. |
-| `p:fail( errback )` | If rejected, calls `errback` now with the values; otherwise keeps it for `reject()`. Returns nothing. |
+| `p:resolve( ... )` | If pending, sets the state to resolved and calls every `done` callback with the values, in the order they were added. Does nothing if the promise has settled. |
+| `p:reject( ... )` | If pending, sets the state to rejected and calls every `fail` callback with the values. Does nothing if the promise has settled. |
+| `p:done( callback )` | If pending, keeps `callback` for `resolve()`; if resolved, calls it now with the values; if rejected, drops it. Returns nothing. |
+| `p:fail( errback )` | If pending, keeps `errback` for `reject()`; if rejected, calls it now with the values; if resolved, drops it. Returns nothing. |
 | `p:progress()` | Not written: raises an error. |
 
-Callbacks run synchronously, inside `resolve()`/`reject()` or `done()`/`fail()`.
+Callbacks run synchronously, inside `resolve()`/`reject()` or `done()`/`fail()`. Once the promise has settled it keeps no callbacks.
 
 ## In Solar2D
 
@@ -129,14 +130,10 @@ Callbacks run synchronously, inside `resolve()`/`reject()` or `done()`/`fail()`.
 
 ## Known Issues
 
-- **A promise can settle more than once.** `resolve()` and `reject()` don't check the state: a second `resolve()` calls the `done` callbacks again, and a `reject()` after it calls the `fail` callbacks and changes the state.
 - **No chaining.** `done()`, `fail()` and `addCallbacks()` return nothing, and a callback's return value is dropped. In Twisted, each callback's result goes to the next one; here every callback gets the original values.
 - **An error in a callback stops the rest**: it propagates out of `resolve()`/`reject()` (or `done()`/`fail()`), and the later callbacks don't run.
-- **`maybeDeferred()` doesn't catch errors**: when `func` raises, the error propagates instead of coming back as a rejected deferred, as it does in Twisted. It passes at most two arguments (`args`, `kwargs`).
-- `maybeDeferred()` looks for a `Failure` class that isn't defined, so it never returns a rejected deferred; any result that isn't a `Deferred`, including a `Promise`, becomes the value of a resolved one.
+- `maybeDeferred()` has no `Failure` class, as Twisted has: a raised error comes back as it was raised. Any result that isn't a `Deferred`, including a `Promise`, becomes the value of a resolved one, and only the first return value is kept.
 - `progress()` and `notify()` aren't written.
-- Values after a `nil` may be lost when a callback is added after the promise settled (`unpack()` of the stored values); callbacks added before get them all.
-- Uses the global `unpack`: Lua 5.1 (and LuaJIT) only. It relies on lua-class's global `newClass()`; its `Class` import is unused.
 
 ## Development
 
@@ -151,10 +148,10 @@ busted spec
 It ends with:
 
 ```text
-12 successes / 0 failures / 0 errors / 0 pending : 0.002747 seconds
+22 successes / 0 failures / 0 errors / 0 pending : 0.004 seconds
 ```
 
-The tests cover `done`/`fail` and `addCallbacks()` added before the promise settles, not callbacks added after, settling twice, or `maybeDeferred()`.
+The tests cover `done`/`fail` and `addCallbacks()` added before and after the promise settles, settling once, values after a `nil`, and `maybeDeferred()`.
 
 ## License
 
