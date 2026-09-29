@@ -312,4 +312,135 @@ describe( "Module Test: lua_promise.lua", function()
 	end)
 
 
+	describe( "Tests for settling", function()
+
+		local obj
+
+		before_each( function()
+			obj = Promise.Promise:new()
+		end)
+
+		after_each( function()
+			obj:destroy()
+			obj = nil
+		end)
+
+
+		it( "settles only once", function()
+			local done_count, fail_count = 0, 0
+			obj:done( function() done_count = done_count + 1 end )
+			obj:fail( function() fail_count = fail_count + 1 end )
+
+			obj:resolve( 1 )
+			obj:resolve( 2 )
+			obj:reject( "error!" )
+
+			assert.are.equal( obj.state, Promise.Promise.STATE_RESOLVED )
+			assert.are.equal( done_count, 1 )
+			assert.are.equal( fail_count, 0 )
+
+			local late
+			obj:done( function( value ) late = value end )
+			assert.are.equal( late, 1 )
+		end)
+
+		it( "ignores resolve() after reject()", function()
+			local val, err
+			obj:done( function( value ) val = value end )
+			obj:fail( function( e ) err = e end )
+
+			obj:reject( "error!" )
+			obj:resolve( "success" )
+
+			assert.are.equal( obj.state, Promise.Promise.STATE_REJECTED )
+			assert.are.equal( err, "error!" )
+			assert.are.equal( val, nil )
+		end)
+
+		it( "runs a callback added after resolve() at once", function()
+			obj:resolve( "success" )
+			local val, err
+			obj:done( function( value ) val = value end )
+			obj:fail( function( e ) err = e end )
+			assert.are.equal( val, "success" )
+			assert.are.equal( err, nil )
+		end)
+
+		it( "runs an errback added after reject() at once", function()
+			obj:reject( "error!" )
+			local val, err
+			obj:done( function( value ) val = value end )
+			obj:fail( function( e ) err = e end )
+			assert.are.equal( err, "error!" )
+			assert.are.equal( val, nil )
+		end)
+
+		it( "passes values after a nil hole", function()
+			local before, after
+			obj:done( function( ... ) before = { n=select( '#', ... ), ... } end )
+			obj:resolve( 1, nil, 3 )
+			obj:done( function( ... ) after = { n=select( '#', ... ), ... } end )
+
+			assert.are.equal( before.n, 3 )
+			assert.are.equal( before[3], 3 )
+			assert.are.equal( after.n, 3 )
+			assert.are.equal( after[3], 3 )
+		end)
+
+	end)
+
+
+	describe( "Tests for maybeDeferred", function()
+
+		local maybeDeferred = Promise.maybeDeferred
+
+		local function outcome( d )
+			local res = {}
+			d:addCallbacks(
+				function( ... ) res.val = { ... } end,
+				function( ... ) res.err = { ... } end
+			)
+			return res
+		end
+
+
+		it( "resolves with the function's result", function()
+			local d = maybeDeferred( function( a, b ) return a + b end, 2, 3 )
+			assert.is_true( d:isa( Promise.Deferred ) )
+			local res = outcome( d )
+			assert.are.equal( res.val[1], 5 )
+			assert.are.equal( res.err, nil )
+		end)
+
+		it( "passes every argument", function()
+			local d = maybeDeferred( function( ... ) return select( '#', ... ) end, 1, nil, 3 )
+			assert.are.equal( outcome( d ).val[1], 3 )
+		end)
+
+		it( "returns a Deferred the function returns", function()
+			local inner = Promise.Deferred:new()
+			local d = maybeDeferred( function() return inner end )
+			assert.are.equal( d, inner )
+			local res = outcome( d )
+			assert.are.equal( res.val, nil )
+			inner:callback( "later" )
+			assert.are.equal( res.val[1], "later" )
+		end)
+
+		it( "rejects with the error the function raises", function()
+			local d = maybeDeferred( function() error( "boom" ) end )
+			local res = outcome( d )
+			assert.are.equal( res.val, nil )
+			assert.is_truthy( res.err[1]:find( "boom", 1, true ) )
+		end)
+
+		it( "rejects with a raised table as it is", function()
+			local e = { message="boom" }
+			local d = maybeDeferred( function() error( e ) end )
+			assert.are.equal( outcome( d ).err[1], e )
+		end)
+
+	end)
+
+
 end)
