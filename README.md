@@ -96,7 +96,7 @@ To update, pull the repository again (`git -C lua-promise pull`).
 | `Promise` | The promise class. |
 | `Deferred` | The deferred class. |
 | `maybeDeferred( func, ... )` | Calls `func( ... )` in `pcall()`. Returns the result if it's a `Deferred`, otherwise a new `Deferred` already resolved with the result (its first return value). If `func` raises, returns a new `Deferred` already rejected with the error: the message string (with its file and line) or the value raised. |
-| `__version` | `'0.2.0'`. |
+| `__version` | `'0.2.1'`. |
 
 Both classes are lua-class classes: create with `:new()`, remove with `:destroy()`.
 
@@ -131,7 +131,7 @@ Callbacks run synchronously, inside `resolve()`/`reject()` or `done()`/`fail()`.
 ## Known Issues
 
 - **No chaining.** `done()`, `fail()` and `addCallbacks()` return nothing, and a callback's return value is dropped. In Twisted, each callback's result goes to the next one; here every callback gets the original values.
-- **An error in a callback stops the rest**: it propagates out of `resolve()`/`reject()` (or `done()`/`fail()`), and the later callbacks don't run.
+- **An error in a callback isn't passed to the errbacks.** Every callback still runs; then the first error is raised, as it was, out of `resolve()`/`reject()` to whoever settled the promise, and a later error is dropped. The traceback of a string error starts at the promise: the message's file and line say where it was raised. A callback run at once by `done()`/`fail()` on a settled promise raises to their caller.
 - `maybeDeferred()` has no `Failure` class, as Twisted has: a raised error comes back as it was raised. Any result that isn't a `Deferred`, including a `Promise`, becomes the value of a resolved one, and only the first return value is kept.
 - `progress()` and `notify()` aren't written.
 
@@ -148,7 +148,7 @@ busted spec
 It ends with:
 
 ```text
-22 successes / 0 failures / 0 errors / 0 pending : 0.004 seconds
+28 successes / 0 failures / 0 errors / 0 pending : 0.004 seconds
 ```
 
 The tests cover `done`/`fail` and `addCallbacks()` added before and after the promise settles, settling once, values after a `nil`, and `maybeDeferred()`.

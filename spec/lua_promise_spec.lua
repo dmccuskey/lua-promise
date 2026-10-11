@@ -390,6 +390,84 @@ describe( "Module Test: lua_promise.lua", function()
 	end)
 
 
+	describe( "Tests for a callback that raises an error", function()
+
+		local obj
+
+		before_each( function()
+			obj = Promise.Promise:new()
+		end)
+
+		after_each( function()
+			obj:destroy()
+			obj = nil
+		end)
+
+
+		it( "runs the later callbacks, then raises the error", function()
+			local order = {}
+			obj:done( function() order[#order+1] = 1 end )
+			obj:done( function() order[#order+1] = 2 ; error( "second failed", 0 ) end )
+			obj:done( function( value ) order[#order+1] = value end )
+
+			assert.has.error( function() obj:resolve( 3 ) end, "second failed" )
+			assert.are.same( { 1, 2, 3 }, order )
+			assert.are.equal( obj.state, Promise.Promise.STATE_RESOLVED )
+		end)
+
+		it( "runs the later errbacks, then raises the error", function()
+			local reasons = {}
+			obj:fail( function() error( "first failed", 0 ) end )
+			obj:fail( function( reason ) reasons[#reasons+1] = reason end )
+
+			assert.has.error( function() obj:reject( "why" ) end, "first failed" )
+			assert.are.same( { "why" }, reasons )
+			assert.are.equal( obj.state, Promise.Promise.STATE_REJECTED )
+		end)
+
+		it( "raises the first error of several", function()
+			local count = 0
+			obj:done( function() count = count + 1 ; error( "one", 0 ) end )
+			obj:done( function() count = count + 1 ; error( "two", 0 ) end )
+
+			assert.has.error( function() obj:resolve() end, "one" )
+			assert.are.equal( count, 2 )
+		end)
+
+		it( "raises an error object as it is", function()
+			local err = { code=42 }
+			local ran = false
+			obj:done( function() error( err ) end )
+			obj:done( function() ran = true end )
+
+			local ok, caught = pcall( function() obj:resolve() end )
+			assert.is_false( ok )
+			assert.are.equal( caught, err )
+			assert.is_true( ran )
+		end)
+
+		it( "keeps a raised nil an error", function()
+			local ran = false
+			obj:done( function() error() end )
+			obj:done( function() ran = true end )
+
+			assert.is_false( pcall( function() obj:resolve() end ) )
+			assert.is_true( ran )
+		end)
+
+		it( "works through a Deferred", function()
+			local d = Promise.Deferred:new()
+			local ran = false
+			d:addCallbacks( function() error( "cb failed", 0 ) end, nil )
+			d:addCallbacks( function() ran = true end, nil )
+
+			assert.has.error( function() d:callback( 1 ) end, "cb failed" )
+			assert.is_true( ran )
+		end)
+
+	end)
+
+
 	describe( "Tests for maybeDeferred", function()
 
 		local maybeDeferred = Promise.maybeDeferred
